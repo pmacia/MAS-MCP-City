@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: If you use this software or datasets, please cite it as below.
+title: MAS-MCP City: Reproducible LLM-agent coordination with MCP over NGSI-LD/SensorThings
+authors:
+  - family-names: Maciá-Pérez
+    given-names: Francisco
+  - family-names: Lorenzo-Fonseca
+    given-names: Iren
+  - family-names: Maciá-Fiteni
+    given-names: Àlex
+repository-code: https://github.com/pmacia/MAS-MCP-City
+license: CC-BY-NC-4.0
+date-released: 2025-10-29

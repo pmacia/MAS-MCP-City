@@ -1,0 +1,5 @@
+Metric,B1 (ad hoc),B2 (MAS w/o MCP),B3 (MAS MCP),Δ B3 vs B1
+"TTI (h, median, n=10)",9.1,7.0,5.6,-38%
+Latency P95 (s),1.52,1.33,1.14,-25%
+Ext. effect failures (%),6.8,4.3,2.7,-60%
+Cost €/1k min,21.6,19.8,18.1,-16%

@@ -1,0 +1,11 @@
+{
+  "@iot.id": 1001,
+  "name": "CO2 A1-1.01",
+  "description": "CO2 ppm",
+  "unitOfMeasurement": {
+    "name": "ppm",
+    "symbol": "ppm",
+    "definition": "parts per million"
+  },
+  "ObservationType": "OM_Measurement"
+}

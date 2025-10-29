@@ -1,0 +1,35 @@
+{
+  "$id": "schemas/json/envelope.json",
+  "type": "object",
+  "required": [
+    "conversation_id",
+    "performative",
+    "ontology",
+    "content",
+    "traceparent"
+  ],
+  "properties": {
+    "conversation_id": {
+      "type": "string"
+    },
+    "performative": {
+      "type": "string",
+      "enum": [
+        "request",
+        "propose",
+        "agree",
+        "inform",
+        "failure"
+      ]
+    },
+    "ontology": {
+      "type": "string"
+    },
+    "content": {
+      "type": "object"
+    },
+    "traceparent": {
+      "type": "string"
+    }
+  }
+}

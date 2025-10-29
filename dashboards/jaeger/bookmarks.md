@@ -1,0 +1,1 @@
+- sample query: service = mcp-ngsi AND error = true

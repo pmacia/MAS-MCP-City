@@ -1,0 +1,24 @@
+{
+  "id": "urn:ngsi-ld:Schedule:ES-UA:A1-1.01:2025-10-01",
+  "type": "Schedule",
+  "room": {
+    "type": "Relationship",
+    "object": "urn:ngsi-ld:Room:ES-UA:A1-1.01"
+  },
+  "events": {
+    "type": "Property",
+    "value": [
+      {
+        "start": "09:00",
+        "end": "10:00"
+      },
+      {
+        "start": "10:15",
+        "end": "11:15"
+      }
+    ]
+  },
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld"
+  ]
+}

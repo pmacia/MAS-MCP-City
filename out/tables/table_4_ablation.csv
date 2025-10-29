@@ -1,0 +1,4 @@
+Configuration,TTI (h),P95 (s),Ext. visible failures (%),Min >1000 ppm
+MAS MCP without tracing,5.5,1.12,2.8,24
+MAS MCP without policies,5.6,1.15,4.9,22
+MAS MCP w/o MCP (HTTP tools),7.0,1.33,4.3,29

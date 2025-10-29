@@ -1,0 +1,18 @@
+[
+  {
+    "phenomenonTime": "2025-10-01T09:00:00Z",
+    "result": 650
+  },
+  {
+    "phenomenonTime": "2025-10-01T09:15:00Z",
+    "result": 980
+  },
+  {
+    "phenomenonTime": "2025-10-01T09:30:00Z",
+    "result": 1120
+  },
+  {
+    "phenomenonTime": "2025-10-01T09:45:00Z",
+    "result": 900
+  }
+]
