@@ -1,0 +1,8 @@
+{
+  "name": "discover",
+  "time": 1761828296298,
+  "attributes": {
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00",
+    "server": "actuation-mcp"
+  }
+}

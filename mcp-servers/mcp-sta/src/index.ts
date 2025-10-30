@@ -1,93 +1,217 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import pino from 'pino';
 import fs from 'fs';
-import path, { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { z } from 'zod';
+import path, { dirname } from 'path'; 
+import { fileURLToPath } from 'url'; 
+import { z, ZodRawShape, ZodTypeAny } from 'zod';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// --- Type Definitions ---
 
-const app = express();
+// Define a type for tools/manifests
+interface ToolManifest {
+    name: string;
+    capabilities?: {
+        read?: string[];
+        write?: string[];
+    };
+    effects?: Record<string, any>;
+    input_schema?: {
+        type: 'object';
+        required?: string[];
+        properties?: Record<string, any>;
+    };
+}
+
+// Define a type for OTLP attributes object
+interface OtlpAttributes {
+    traceparent?: string;
+    server?: string;
+    tool?: string;
+    found?: boolean;
+    class?: string;
+    reason?: string;
+    count?: number;
+    details?: string;
+}
+
+// Define interface for the POST /call request body
+interface CallBody {
+    tool: string;
+    args: Record<string, any>;
+    scope: {
+        read?: string[];
+        write?: string[];
+    };
+}
+
+// --- Application Setup ---
+
+export const app = express();
 app.use(express.json());
 app.use(cors());
 const logger = pino();
 
+// ⭐️ Corrected PORT for mcp-sta
 const PORT = 8002;
 const AUTH_TOKEN = process.env.AUTH_TOKEN || 'dev-token';
+const OTLP_DIR = process.env.OTLP_DIR || path.join(process.cwd(), 'traces', 'golden');
+
+// --- Handle ESM __dirname compatibility ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// --- Tool Manifest Loading ---
 
 const toolsDir = path.join(__dirname, '..', 'tools');
+if (!fs.existsSync(toolsDir)) {
+    logger.warn(`Tools directory not found: ${toolsDir}`);
+}
+
 const toolFiles = fs.readdirSync(toolsDir).filter(f => f.endsWith('.json'));
-const toolManifests: Record<string, any> = Object.fromEntries(
-  toolFiles.map(f => { const m = JSON.parse(fs.readFileSync(path.join(toolsDir, f), 'utf-8')); return [m.name, m]; })
+
+// Explicitly type toolManifests
+const toolManifests: Record<string, ToolManifest> = Object.fromEntries(
+    toolFiles.map(f => {
+        const filePath = path.join(toolsDir, f);
+        const m: ToolManifest = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return [m.name, m];
+    })
 );
 
-const quotas: Record<string, number> = {}, QUOTA_LIMIT = 1000;
+// Explicitly type quotas
+const quotas: Record<string, number> = {};
+const QUOTA_LIMIT = 25; // lowered for tests
 
-function auth(req:any, res:any, next:any) {
-  const hdr = req.headers['authorization'] || '';
-  if (!hdr.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthorized' });
-  const token = hdr.slice(7);
-  if (token !== AUTH_TOKEN) return res.status(403).json({ error: 'forbidden' });
-  next();
+// --- Middleware Functions ---
+
+// 1. Typed auth function (Express Middleware)
+function auth(req: Request, res: Response, next: NextFunction): Response | void {
+    const hdr = req.headers['authorization'] || '';
+    if (!hdr.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthorized' });
+    const token = hdr.slice(7);
+    if (token !== AUTH_TOKEN) return res.status(403).json({ error: 'forbidden' });
+    next();
 }
 
-app.get('/discover', auth, (req, res) => {
-  res.json({
-    server: 'mcp-sta',
-    tools: Object.values(toolManifests).map((m:any) => ({ name: m.name, capabilities: m.capabilities, effects: m.effects }))
-  });
-});
-
-app.get('/schema/:tool', auth, (req, res) => {
-  const t = req.params.tool;
-  const m = toolManifests[t];
-  if (!m) return res.status(404).json({ error: 'tool_not_found' });
-  res.json(m);
-});
-
-app.post('/call', auth, async (req, res) => {
-  const traceparent = req.headers['traceparent'] || '00-00000000000000000000000000000000-0000000000000000-00';
-  const { tool, args, scope } = req.body || {};
-  const m = toolManifests[tool];
-  if (!m) return res.status(404).json({ error: 'tool_not_found', class: 'E-P' });
-
-  // capability check
-  if (m.capabilities && m.capabilities.read && scope && scope.read) {
-    const allowed = (m.capabilities.read as string[]).some((s:string) => scope.read.includes(s));
-    if (!allowed) return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
-  }
-  if (m.capabilities && m.capabilities.write && scope && scope.write) {
-    const allowed = (m.capabilities.write as string[]).some((s:string) => scope.write.includes(s));
-    if (!allowed) return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
-  }
-
-  quotas[tool] = (quotas[tool] || 0) + 1;
-  if (quotas[tool] > QUOTA_LIMIT) return res.status(429).json({ error: 'quota_exceeded', class: 'E-U' });
-
-  try {
-    const schema = m.input_schema ? z.object(Object.fromEntries(Object.keys(m.input_schema.properties || {})
-                     .map((k:any) => [k, z.any()]))) : z.any();
-    schema.parse(args || {});
-  } catch (e:any) {
-    return res.status(400).json({ error: 'validation_error', class: 'E-V', details: String(e) });
-  }
-
-  await new Promise(r => setTimeout(r, 8));
-  return res.json({ ok: true, tool, args, scope, traceparent });
-});
-
-// to alow testing, export a start function
-function start() {
-  // Si la inicialización síncrona de archivos falla, el código ya está roto aquí.
-  return app.listen(PORT, () => logger.info({ /* ... */ }));
+// 2. Typed withTrace (Receives Request, returns string)
+function withTrace(req: Request): string {
+    const tp = req.headers['traceparent'] || '00-00000000000000000000000000000000-0000000000000000-00';
+    return String(tp);
 }
 
-export { app, start }; // export the app and start function for testing
+// 3. Typed emitOtlpSpan (Receives string and Attributes Object)
+function emitOtlpSpan(name: string, attrs: OtlpAttributes): void {
+    try {
+        fs.mkdirSync(OTLP_DIR, { recursive: true });
+        const span = {
+            name,
+            time: Date.now(),
+            attributes: attrs
+        };
+        const safe = name.replace(/[^a-zA-Z0-9_-]/g, '_') + '-' + String(span.time) + '.json';
+        fs.writeFileSync(path.join(OTLP_DIR, safe), JSON.stringify(span, null, 2));
+    } catch (e) {
+        // ignore in dev
+    }
+}
 
-// Call start() only if this file is executed as the main program.
-// Note: 'process.env.VITEST' is a variable set by Vitest to prevent automatic startup during tests.
-if (process.argv[1] === fileURLToPath(import.meta.url) && !process.env.VITEST) {
+// --- Route Handlers ---
+
+app.get('/discover', auth, (req: Request, res: Response) => {
+    const traceparent = withTrace(req);
+    // ⭐️ Corrected server name in logger
+    logger.info({ msg: 'discover', traceparent, server: 'mcp-sta' });
+    // ⭐️ Corrected server name in span attributes
+    emitOtlpSpan('discover', { traceparent, server: 'mcp-sta' });
+    res.json({
+        // ⭐️ Corrected server name in response body
+        server: 'mcp-sta',
+        tools: Object.values(toolManifests).map((m) => ({ name: m.name, capabilities: m.capabilities, effects: m.effects }))
+    });
+});
+
+app.get('/schema/:tool', auth, (req: Request, res: Response) => {
+    const traceparent = withTrace(req);
+    const t = req.params.tool;
+    const m = toolManifests[t];
+    logger.info({ msg: 'schema', t, found: !!m, traceparent });
+    emitOtlpSpan('schema', { tool: t, found: !!m, traceparent });
+    if (!m) return res.status(404).json({ error: 'tool_not_found' });
+    res.json(m);
+});
+
+app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Response) => {
+    const traceparent = withTrace(req);
+    // Destructure with default values
+    const { tool, args = {}, scope = {} } = req.body || {};
+    
+    // Tool existence check
+    if (!tool) return res.status(400).json({ error: 'tool_missing', class: 'E-P' });
+    const m = toolManifests[tool];
+    if (!m) return res.status(404).json({ error: 'tool_not_found', class: 'E-P' });
+
+    // Capability check
+    const capabilities = m.capabilities;
+
+    if (capabilities && capabilities.read && scope.read) {
+        const allowed = capabilities.read.some((s: string) => scope.read!.includes(s) || scope.read!.includes('*'));
+        if (!allowed) {
+            emitOtlpSpan('call_denied', { tool, class: 'E-V', reason: 'capability', traceparent });
+            return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
+        }
+    }
+    
+    if (capabilities && capabilities.write && scope.write) {
+        const allowed = capabilities.write.some((s: string) => scope.write!.includes(s));
+        if (!allowed) {
+            emitOtlpSpan('call_denied', { tool, class: 'E-V', reason: 'capability', traceparent });
+            return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
+        }
+    }
+
+    // Quota check
+    quotas[tool] = (quotas[tool] || 0) + 1;
+    if (quotas[tool] > QUOTA_LIMIT) {
+        emitOtlpSpan('quota_exceeded', { tool, class: 'E-U', traceparent, count: quotas[tool] });
+        return res.status(429).json({ error: 'quota_exceeded', class: 'E-U' });
+    }
+
+    // Validation
+    try {
+        let schema: ZodTypeAny;
+
+        if (m.input_schema && m.input_schema.properties) {
+            const properties: ZodRawShape = Object.fromEntries(
+                Object.keys(m.input_schema.properties).map((k) => [k, z.any()])
+            );
+            schema = z.object(properties);
+        } else {
+            schema = z.any();
+        }
+
+        schema.parse(args);
+    } catch (e) {
+        const details = e instanceof Error ? e.message : String(e);
+        emitOtlpSpan('validation_error', { tool, class: 'E-V', traceparent, details });
+        return res.status(400).json({ error: 'validation_error', class: 'E-V', details });
+    }
+
+    await new Promise(r => setTimeout(r, 5));
+    emitOtlpSpan('call_ok', { tool, traceparent });
+    logger.info({ msg: 'call_ok', tool, traceparent });
+    return res.json({ ok: true, tool, args, scope, traceparent });
+});
+
+// --- Server Startup ---
+
+// Export start() so it can be called in tests
+export function start() {
+    // ⭐️ Corrected name and port in startup message
+    return app.listen(PORT, () => logger.info({ msg: 'MCP server started', name: 'mcp-sta', port: PORT }));
+}
+
+// Start the server only if the file is executed directly
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     start();
 }

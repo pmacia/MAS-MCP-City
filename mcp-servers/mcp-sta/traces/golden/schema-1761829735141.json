@@ -1,0 +1,9 @@
+{
+  "name": "schema",
+  "time": 1761829735141,
+  "attributes": {
+    "tool": "sta_get_datastreams",
+    "found": true,
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00"
+  }
+}

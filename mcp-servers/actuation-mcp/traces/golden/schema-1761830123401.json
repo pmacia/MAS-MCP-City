@@ -1,0 +1,9 @@
+{
+  "name": "schema",
+  "time": 1761830123401,
+  "attributes": {
+    "tool": "bms_setpoint_write",
+    "found": true,
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00"
+  }
+}

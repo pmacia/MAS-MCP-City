@@ -1,0 +1,10 @@
+{
+  "name": "call_denied",
+  "time": 1761830120955,
+  "attributes": {
+    "tool": "ngsi_query",
+    "class": "E-V",
+    "reason": "capability",
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00"
+  }
+}

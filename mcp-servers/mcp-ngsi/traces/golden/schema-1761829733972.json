@@ -1,0 +1,9 @@
+{
+  "name": "schema",
+  "time": 1761829733972,
+  "attributes": {
+    "tool": "ngsi_query",
+    "found": true,
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00"
+  }
+}

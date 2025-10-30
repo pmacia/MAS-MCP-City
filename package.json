@@ -9,9 +9,13 @@
     "agents/cli"
   ],
   "scripts": {
-    "build": "npm -ws run build",
-    "start": "npm -ws run start",
-    "test": "npm -ws run test",
-    "dev": "npm -w mcp-servers/mcp-ngsi run dev & npm -w mcp-servers/mcp-sta run dev & npm -w mcp-servers/actuation-mcp run dev & wait"
+    "build": "npm run build --workspaces",
+    "start": "concurrently \"npm run start --workspace mcp-servers/mcp-ngsi\" \"npm run start --workspace mcp-servers/mcp-sta\" \"npm run start --workspace mcp-servers/actuation-mcp\"",
+    "start:prod": "npm run build && concurrently \"npm run start --workspace mcp-servers/mcp-ngsi\" \"npm run start --workspace mcp-servers/mcp-sta\" \"npm run start --workspace mcp-servers/actuation-mcp\"",
+    "test": "npm run test --workspaces",
+    "dev": "concurrently \"npm run dev --workspace mcp-servers/mcp-ngsi\" \"npm run dev --workspace mcp-servers/mcp-sta\" \"npm run dev --workspace mcp-servers/actuation-mcp\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

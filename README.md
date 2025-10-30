@@ -22,14 +22,18 @@ make verify
 unzip MAS-MCP-City-v0.2.zip
 cd MAS-MCP-City-v0.2
 npm install
-npm -ws run build
+npm run build
 
 npm run dev
 ```
 
-## Test the end-to-end CLI (in another terminal)
+## Minimal Agent CLI
+Test the end-to-end CLI
+Start servers (in another terminal) and run the CLI:
 ```bash
-npm -w agents/cli run dev
+npm install
+npm run dev  # starts MCP servers 8001–8003
+npm gents/cli run dev
 # Expected output:
 # NGSI tools: [...]
 # ngsi_query(ok): true
@@ -39,9 +43,8 @@ npm -w agents/cli run dev
 
 ## Run de automated test (Vitest)
 ```bash
-npm -ws run test
+npm run test
 ```
-
 
 ## Layout
 - `mcp-servers/*` – Node (Express+TS) servers for NGSI-LD, STA, and actuation
@@ -49,3 +52,7 @@ npm -ws run test
 - `schemas/*` – JSON/Avro (envelopes, tools)
 - `eval/` – scripts to regenerate KPIs/tables
 - `dashboards/` – Grafana/Jaeger placeholders
+
+## v0.3 updates
+- Traceparent logging + OTLP JSON spans in `traces/golden/`
+- Hardened tests for capabilities, validation, quotas
