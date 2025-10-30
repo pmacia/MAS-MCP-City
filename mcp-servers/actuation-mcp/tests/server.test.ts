@@ -1,203 +1,72 @@
-import request from 'supertest';
-import { app as actuationApp } from '../src/index';
+import { test, describe, expect, beforeAll, afterAll } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { MemoryServerTransport } from '@modelcontextprotocol/sdk/server/memory.js';
+// Importa mock-tools desde el mismo directorio
+import { MOCK_MANIFESTS } from './mock-tools'; 
 
-// Configuración de prueba
-const AUTH_TOKEN = 'dev-token';
-const AUTH_HEADER = `Bearer ${AUTH_TOKEN}`;
+let server: McpServer;
+let transport: MemoryServerTransport;
 
-// Mock de la función emitOtlpSpan para evitar escrituras en disco durante el test
-jest.mock('fs', () => ({
-    ...jest.requireActual('fs'),
-    writeFileSync: jest.fn(),
-    mkdirSync: jest.fn(),
-}));
+describe('Actuation MCP Server (SDK) API Compliance', () => {
 
-describe('Actuation MCP Server Endpoints (Port 8000)', () => {
-    // -----------------------------------------------------------
-    // /call - Idempotency and Basic Logic Tests
-    // -----------------------------------------------------------
-
-    describe('POST /call - Idempotency and Validation', () => {
-        const TEST_TOOL = 'actuation_tool_a';
-        const IDEMPOTENCY_KEY = 'test-id-12345';
-        
-        // Test 1: Primera llamada exitosa
-        it('should process the first call successfully and register idempotency key (status: accepted)', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    idempotency_key: IDEMPOTENCY_KEY,
-                    required_field: 'data',
-                    dry_run: false
-                },
-                scope: { write: ['power'] }
-            };
-
-            const response = await request(actuationApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(200);
-
-            expect(response.body.ok).toBe(true);
-            expect(response.body.ack.status).toBe('accepted');
-            expect(response.body.ack.effect).toBe('planned');
-            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
-        });
-
-        // Test 2: Segunda llamada con la misma clave (Idempotencia)
-        it('should return "already_processed" for subsequent calls with the same key', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    idempotency_key: IDEMPOTENCY_KEY,
-                    required_field: 'different_data' // Changing args doesn't matter
-                },
-                scope: { write: ['power'] }
-            };
-            
-            // La segunda llamada debería ser aceptada pero con status 'already_processed'
-            const response = await request(actuationApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(200);
-
-            expect(response.body.ok).toBe(true);
-            expect(response.body.ack.status).toBe('already_processed');
-            expect(response.body.ack.effect).toBe('none');
-            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
+    beforeAll(() => {
+        // Inicializa el servidor MCP de prueba
+        server = new McpServer({ 
+            name: 'test-actuation-mcp', 
+            version: '0.0.1' 
         });
         
-        // Test 3: Validación de campo obligatorio faltante (missing)
-        it('should return 400 validation_error with "missing" field if a required argument is absent', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    // required_field está ausente
-                },
-                scope: { write: ['power'] }
-            };
-
-            const response = await request(actuationApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(400);
-
-            expect(response.body.error).toBe('validation_error');
-            expect(response.body.class).toBe('E-V');
-            expect(response.body.missing).toBe('required_field'); // Verifica el campo faltante
-        });
-        
-        // Test 4: Validación de herramienta faltante
-        it('should return 400 tool_missing if tool field is absent in body', async () => {
-            const payload = {
-                args: { key: 'value' },
-                scope: { write: ['power'] }
-            };
-
-            const response = await request(actuationApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(400);
-
-            expect(response.body.error).toBe('tool_missing');
-            expect(response.body.class).toBe('E-P');
-        });
-    });
-
-    // -----------------------------------------------------------
-    // /discover and /schema Tests
-    // -----------------------------------------------------------
-
-    describe('GET /discover', () => {
-        it('should return 200 and a list of tools', async () => {
-            const response = await request(actuationApp)
-                .get('/discover')
-                .set('Authorization', AUTH_HEADER)
-                .expect(200);
-
-            expect(response.body.server).toBe('actuation-mcp');
-            expect(Array.isArray(response.body.tools)).toBe(true);
-            expect(response.body.tools.length).toBeGreaterThan(0);
-            expect(response.body.tools[0]).toHaveProperty('name');
-        });
-    });
-
-    describe('GET /schema/:tool', () => {
-        it('should return 200 and schema for a valid tool', async () => {
-            const response = await request(actuationApp)
-                .get('/schema/actuation_tool_a')
-                .set('Authorization', AUTH_HEADER)
-                .expect(200);
-
-            expect(response.body.name).toBe('actuation_tool_a');
-            expect(response.body).toHaveProperty('input_schema');
-        });
-
-        it('should return 404 for an invalid tool', async () => {
-            await request(actuationApp)
-                .get('/schema/non_existent_tool')
-                .set('Authorization', AUTH_HEADER)
-                .expect(404);
-        });
-    });
-    
-    // -----------------------------------------------------------
-    // Auth Tests (Applicable to all endpoints)
-    // -----------------------------------------------------------
-
-    describe('Authentication', () => {
-        it('should return 401 if Authorization header is missing', async () => {
-            await request(actuationApp)
-                .get('/discover')
-                .expect(401);
-        });
-
-        it('should return 403 if Authorization token is incorrect', async () => {
-            await request(actuationApp)
-                .get('/discover')
-                .set('Authorization', 'Bearer wrong-token')
-                .expect(403);
-        });
-    });
-    
-    // -----------------------------------------------------------
-    // Quota Test (Should fail after 25 calls)
-    // -----------------------------------------------------------
-    
-    describe('Quota Limit Test', () => {
-        it('should exceed quota and return 429 after 25 calls', async () => {
-            const QUOTA_TOOL = 'actuation_tool_b'; // Usa una herramienta diferente para no afectar las pruebas anteriores
-            const MAX_CALLS = 25; // QUOTA_LIMIT en el servidor
-            const payload = {
-                tool: QUOTA_TOOL,
-                args: { required_field: 'data' },
-                scope: { write: ['power'] }
-            };
-
-            // Realiza 25 llamadas exitosas (0 a 24)
-            for (let i = 0; i < MAX_CALLS; i++) {
-                const response = await request(actuationApp)
-                    .post('/call')
-                    .set('Authorization', AUTH_HEADER)
-                    .send(payload);
-                
-                // Asegúrate de que las primeras 25 llamadas sean 200 OK
-                expect(response.statusCode).toBe(200);
+        // Simula el registro de la herramienta usando la API moderna
+        server.registerTool(
+            "actuate-device",
+            MOCK_MANIFESTS['actuate-device'], // Usando el manifiesto mockeado (.shape)
+            async (input) => {
+                const { deviceId, action } = input;
+                const result = { ok: true, message: `Actuación exitosa simulada en ${deviceId} con ${action}.` };
+                return { 
+                    content: [{ type: "text", text: JSON.stringify(result) }], 
+                    structuredContent: result 
+                };
             }
+        );
+        
+        transport = new MemoryServerTransport();
+        server.connect(transport);
+    });
 
-            // Llamada 26 (la que excede la cuota)
-            const finalResponse = await request(actuationApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(429); // Espera 429 Too Many Requests
+    afterAll(() => {
+        // Desconecta el servidor después de todas las pruebas
+        server.disconnect();
+    });
 
-            expect(finalResponse.body.error).toBe('quota_exceeded');
-            expect(finalResponse.body.class).toBe('E-U');
-        }, 10000); // Aumenta el timeout para la prueba de cuota
+    test('should successfully call actuate-device tool and receive structured response', async () => {
+        const input = { deviceId: 'valve-01', action: 'turn_off' };
+        
+        const response = await transport.call({
+            toolName: 'actuate-device',
+            input,
+        });
+
+        expect(response.status).toBe('ok');
+        
+        // Verificación del contenido estructurado
+        const structuredContent = response.content?.find(c => c.structuredContent)?.structuredContent;
+        expect(structuredContent).toBeDefined();
+        expect(structuredContent.ok).toBe(true);
+        expect(structuredContent.message).toContain('Actuación exitosa');
+    });
+
+    test('should reject call if required input (deviceId) is missing (SDK Validation)', async () => {
+        const input = { action: 'turn_on' }; // deviceId está ausente
+
+        // El SDK valida el input usando Zod y debe devolver un estado de error
+        const response = await transport.call({
+            toolName: 'actuate-device',
+            input,
+        });
+
+        expect(response.status).toBe('error');
+        expect(response.error).toBeDefined();
+        expect(response.error?.message).toContain('Validation failed');
     });
 });

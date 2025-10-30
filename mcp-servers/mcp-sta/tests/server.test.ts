@@ -1,127 +1,72 @@
-import request from 'supertest';
-import { app as staApp } from '../src/mcp-sta';
+import { test, describe, expect, beforeAll, afterAll } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+// import { MemoryServerTransport } from '@modelcontextprotocol/sdk/server/memory.js';
+import { MemoryServerTransport } from "@modelcontextprotocol/sdk/testing.js"; 
 
-// Configuración de prueba
-const AUTH_TOKEN = 'dev-token';
-const AUTH_HEADER = `Bearer ${AUTH_TOKEN}`;
+// Importa mock-tools desde el mismo directorio
+import { MOCK_MANIFESTS } from './mock-tools'; 
 
-// Mock de la función emitOtlpSpan para evitar escrituras en disco durante el test
-jest.mock('fs', () => ({
-    ...jest.requireActual('fs'),
-    writeFileSync: jest.fn(),
-    mkdirSync: jest.fn(),
-}));
+let server: McpServer;
+let transport: MemoryServerTransport;
 
-describe('STA MCP Server Endpoints (Port 8002)', () => {
-    // -----------------------------------------------------------
-    // /call - Idempotency and Basic Logic Tests
-    // -----------------------------------------------------------
+describe('STA MCP Server (SDK) API Compliance', () => {
 
-    describe('POST /call - Idempotency and Validation', () => {
-        const TEST_TOOL = 'sta_tool_a';
-        const IDEMPOTENCY_KEY = 'sta-id-11223';
-        
-        // Test 1: Primera llamada exitosa
-        it('should process the first call successfully and register idempotency key (status: accepted)', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    idempotency_key: IDEMPOTENCY_KEY,
-                    location_id: 101,
-                    dry_run: false
-                },
-                scope: { read: ['sensors'] }
-            };
-
-            const response = await request(staApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(200);
-
-            expect(response.body.ok).toBe(true);
-            expect(response.body.ack.status).toBe('accepted');
-            expect(response.body.ack.effect).toBe('planned');
-            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
-        });
-
-        // Test 2: Segunda llamada con la misma clave (Idempotencia)
-        it('should return "already_processed" for subsequent calls with the same key', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    idempotency_key: IDEMPOTENCY_KEY,
-                    location_id: 202 
-                },
-                scope: { read: ['sensors'] }
-            };
-            
-            const response = await request(staApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(200);
-
-            expect(response.body.ok).toBe(true);
-            expect(response.body.ack.status).toBe('already_processed');
-            expect(response.body.ack.effect).toBe('none');
-            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
+    beforeAll(() => {
+        server = new McpServer({ 
+            name: 'test-mcp-sta', 
+            version: '0.0.1' 
         });
         
-        // Test 3: Validación de campo obligatorio faltante (missing)
-        it('should return 400 validation_error with "missing" field if a required argument is absent', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    // location_id está ausente
-                },
-                scope: { read: ['sensors'] }
-            };
-
-            const response = await request(staApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(400);
-
-            expect(response.body.error).toBe('validation_error');
-            expect(response.body.class).toBe('E-V');
-            expect(response.body.missing).toBe('location_id'); 
-        });
+        server.registerTool(
+            "get-sta-observation",
+            MOCK_MANIFESTS['get-sta-observation'],
+            async (input) => {
+                const { thingId } = input;
+                // Devolver un mock de resultado
+                const result = { thingId, observations: { temperature: 25.5 }, success: true };
+                return { 
+                    content: [{ type: "text", text: JSON.stringify(result) }], 
+                    structuredContent: result 
+                };
+            }
+        );
         
-        // Test 4: Denegación por capacidad (capability denied)
-        it('should return 403 capability_denied if scope does not cover the tool capability', async () => {
-            const payload = {
-                tool: TEST_TOOL,
-                args: { 
-                    location_id: 101 
-                },
-                scope: { read: ['wrong_scope'] } // Scope incorrecto
-            };
-
-            const response = await request(staApp)
-                .post('/call')
-                .set('Authorization', AUTH_HEADER)
-                .send(payload)
-                .expect(403);
-
-            expect(response.body.error).toBe('capability_denied');
-            expect(response.body.class).toBe('E-V');
-        });
+        transport = new MemoryServerTransport();
+        server.connect(transport);
     });
 
-    // -----------------------------------------------------------
-    // /discover and /schema Tests
-    // -----------------------------------------------------------
+    afterAll(() => {
+        server.disconnect();
+    });
 
-    describe('GET /discover', () => {
-        it('should return 200 and the server name', async () => {
-            const response = await request(staApp)
-                .get('/discover')
-                .set('Authorization', AUTH_HEADER)
-                .expect(200);
-
-            expect(response.body.server).toBe('mcp-sta');
+    test('should successfully call get-sta-observation and validate structured response', async () => {
+        const input = { thingId: 'TS_001', datastreams: ['temperature'] };
+        
+        const response = await transport.call({
+            toolName: 'get-sta-observation',
+            input,
         });
+
+        expect(response.status).toBe('ok');
+        
+        const structuredContent = response.content?.find(c => c.structuredContent)?.structuredContent;
+        expect(structuredContent).toBeDefined();
+        expect(structuredContent.success).toBe(true);
+        expect(structuredContent.thingId).toBe(input.thingId);
+        expect(structuredContent.observations.temperature).toBe(25.5);
+    });
+
+    test('should reject call if required input (thingId) is missing (SDK Validation)', async () => {
+        const input = { datastreams: ['pressure'] }; // thingId está ausente
+
+        const response = await transport.call({
+            toolName: 'get-sta-observation',
+            input,
+        });
+
+        // Esperamos que el SDK devuelva un estado de error
+        expect(response.status).toBe('error');
+        expect(response.error).toBeDefined();
+        expect(response.error?.message).toContain('Validation failed');
     });
 });

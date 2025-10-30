@@ -1,247 +1,89 @@
-import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import pino from 'pino';
-import fs from 'fs';
-import path, { dirname } from 'path'; 
-import { fileURLToPath } from 'url'; 
-import { z, ZodRawShape, ZodTypeAny } from 'zod';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
-// --- Type Definitions ---
+// --- Configuración ---
+const ACTUATION_SERVER_NAME = "actuation-mcp";
+const ACTUATION_SERVER_VERSION = "1.0.0";
 
-interface ToolManifest {
-    name: string;
-    capabilities?: {
-        read?: string[];
-        write?: string[];
+// Esquema de entrada para la herramienta 'actuate-device'
+const ActuateInputSchema = z.object({
+  deviceId: z.string().describe("El ID único del dispositivo a actuar (e.g., 'light-001')."),
+  action: z.enum(["turn_on", "turn_off", "set_level"]).describe("La acción a realizar en el dispositivo."),
+  params: z.record(z.any()).optional().describe("Parámetros adicionales, si son necesarios (e.g., { level: 50 })."),
+});
+
+// Esquema de salida para la herramienta 'actuate-device'
+const ActuateOutputSchema = z.object({
+  ok: z.boolean().describe("True si la acción se realizó con éxito."),
+  message: z.string().optional().describe("Mensaje de confirmación o error."),
+});
+
+
+// --- Lógica del Servidor ---
+
+// 1. Crear el servidor MCP
+const server = new McpServer({
+  name: ACTUATION_SERVER_NAME,
+  version: ACTUATION_SERVER_VERSION,
+});
+
+// 2. Registrar la herramienta 'actuate-device'
+server.registerTool(
+  "actuate-device", // Nombre de la herramienta
+  {
+    title: "Actuador de Dispositivo Inteligente",
+    description: "Permite actuar sobre dispositivos IoT, como luces, válvulas o calefacción, cambiando su estado o nivel.",
+    // CORRECCIÓN: Se usa .shape para pasar el ZodRawShape, tal como lo requiere el SDK.
+    inputSchema: ActuateInputSchema.shape, 
+    outputSchema: ActuateOutputSchema.shape,
+  },
+  // Handler (input, context) => Promise<{ content: ..., structuredContent: ... }>
+  async (input) => {
+    const { deviceId, action, params } = input;
+
+    console.log(`[Actuation] Procesando acción: ${action} en ${deviceId}. Params: ${JSON.stringify(params)}`);
+
+    // --- Simulación de la Lógica de Actuación Real ---
+    // En un entorno real, aquí se realizaría la llamada a un servicio HTTP/MQTT/etc.
+    await new Promise(resolve => setTimeout(resolve, 100)); // Simular latencia
+
+    let result;
+    if (deviceId.startsWith("error")) {
+        result = { ok: false, message: `Error simulado al actuar sobre ${deviceId}.` };
+    } else {
+        const actionDetail = action === 'set_level' && params?.level !== undefined 
+            ? `ajustando el nivel a ${params.level}` 
+            : `realizando la acción '${action}'`;
+            
+        result = { ok: true, message: `Actuación exitosa. Dispositivo ${deviceId}: ${actionDetail}.` };
+    }
+    // --------------------------------------------------
+
+    // Devolver el resultado en el formato oficial del SDK
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result),
+        },
+      ],
+      structuredContent: result,
     };
-    effects?: Record<string, any>;
-    input_schema?: {
-        type: 'object';
-        required?: string[];
-        properties?: Record<string, any>;
-    };
-}
-
-interface OtlpAttributes {
-    traceparent?: string;
-    server?: string;
-    tool?: string;
-    found?: boolean;
-    class?: string;
-    reason?: string;
-    count?: number;
-    details?: string;
-    missing?: string;
-}
-
-interface CallBody {
-    tool: string;
-    args: Record<string, any>;
-    scope: {
-        read?: string[];
-        write?: string[];
-    };
-}
-
-// --- Application Setup ---
-
-export const app = express();
-app.use(express.json());
-app.use(cors());
-const logger = pino();
-
-// PORT is 8000 for actuation-mcp
-const PORT = 8000; 
-const AUTH_TOKEN = process.env.AUTH_TOKEN || 'dev-token';
-const OTLP_DIR = process.env.OTLP_DIR || path.join(process.cwd(), 'traces', 'golden');
-
-// --- Idempotency Store (In-Memory) ---
-// Stores idempotency keys that have been successfully accepted/processed.
-const processedKeys = new Set<string>();
-
-// --- Handle ESM __dirname compatibility ---
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// --- Tool Manifest Loading ---
-
-const toolsDir = path.join(__dirname, '..', 'tools');
-if (!fs.existsSync(toolsDir)) {
-    logger.warn(`Tools directory not found: ${toolsDir}`);
-}
-
-const toolFiles = fs.readdirSync(toolsDir).filter(f => f.endsWith('.json'));
-
-const toolManifests: Record<string, ToolManifest> = Object.fromEntries(
-    toolFiles.map(f => {
-        const filePath = path.join(toolsDir, f);
-        const m: ToolManifest = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        return [m.name, m];
-    })
+  }
 );
 
-const quotas: Record<string, number> = {};
-const QUOTA_LIMIT = 25; // lowered for tests
+// 3. Crear el transporte (Stdio para modo local/desarrollo)
+const transport = new StdioServerTransport();
 
-// --- Middleware and Helpers (Unchanged) ---
+// Conectar el servidor al transporte y comenzar a escuchar (async)
+server.connect(transport)
+  .then(() => console.log(`[${ACTUATION_SERVER_NAME}] Servidor MCP (SDK) conectado y escuchando vía STDIO.`))
+  .catch((error) => console.error(`[${ACTUATION_SERVER_NAME}] Error al conectar el servidor:`, error));
 
-function auth(req: Request, res: Response, next: NextFunction): Response | void {
-    const hdr = req.headers['authorization'] || '';
-    if (!hdr.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthorized' });
-    const token = hdr.slice(7);
-    if (token !== AUTH_TOKEN) return res.status(403).json({ error: 'forbidden' });
-    next();
-}
-
-function withTrace(req: Request): string {
-    const tp = req.headers['traceparent'] || '00-00000000000000000000000000000000-0000000000000000-00';
-    return String(tp);
-}
-
-function emitOtlpSpan(name: string, attrs: OtlpAttributes): void {
-    try {
-        fs.mkdirSync(OTLP_DIR, { recursive: true });
-        const span = {
-            name,
-            time: Date.now(),
-            attributes: attrs
-        };
-        const safe = name.replace(/[^a-zA-Z0-9_-]/g, '_') + '-' + String(span.time) + '.json';
-        fs.writeFileSync(path.join(OTLP_DIR, safe), JSON.stringify(span, null, 2));
-    } catch (e) {
-        // ignore in dev
-    }
-}
-
-// --- Route Handlers (/discover, /schema) ---
-
-app.get('/discover', auth, (req: Request, res: Response) => {
-    const traceparent = withTrace(req);
-    logger.info({ msg: 'discover', traceparent, server: 'actuation-mcp' });
-    emitOtlpSpan('discover', { traceparent, server: 'actuation-mcp' });
-    res.json({
-        server: 'actuation-mcp',
-        tools: Object.values(toolManifests).map((m) => ({ name: m.name, capabilities: m.capabilities, effects: m.effects }))
-    });
+// Manejar el cierre elegante (Ctrl+C)
+process.on("SIGINT", () => {
+  console.log(`[${ACTUATION_SERVER_NAME}] Señal SIGINT recibida. Cerrando transporte...`);
+  transport.close();
+  process.exit(0);
 });
-
-app.get('/schema/:tool', auth, (req: Request, res: Response) => {
-    const traceparent = withTrace(req);
-    const t = req.params.tool;
-    const m = toolManifests[t];
-    logger.info({ msg: 'schema', t, found: !!m, traceparent });
-    emitOtlpSpan('schema', { tool: t, found: !!m, traceparent });
-    if (!m) return res.status(404).json({ error: 'tool_not_found' });
-    res.json(m);
-});
-
-// --- Route Handler /call (Updated with Validation and Idempotency Logic) ---
-
-app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Response) => {
-    const traceparent = withTrace(req);
-    const { tool, args = {}, scope = {} } = req.body || {};
-    
-    if (!tool) return res.status(400).json({ error: 'tool_missing', class: 'E-P' });
-    const m = toolManifests[tool];
-    if (!m) return res.status(404).json({ error: 'tool_not_found', class: 'E-P' });
-
-    // 1. Determine Idempotency Key
-    const idempotencyKey = (args && args.idempotency_key) ? String(args.idempotency_key) : String(Date.now());
-    const dryRun = !!(args && args.dry_run);
-
-    // Check if the key has already been processed 
-    if (processedKeys.has(idempotencyKey)) {
-        logger.warn({ msg: 'call_already_processed', tool, traceparent, idempotencyKey });
-        // Return 200 OK with 'already_processed' status 
-        const ack = { 
-            status: 'already_processed', 
-            effect: 'none', 
-            idempotency_key: idempotencyKey 
-        };
-        return res.json({ ok: true, tool, args, scope, traceparent, ack });
-    }
-
-    // Capability check 
-    const capabilities = m.capabilities;
-    if (capabilities && capabilities.read && scope.read) {
-        const allowed = capabilities.read.some((s: string) => scope.read!.includes(s) || scope.read!.includes('*'));
-        if (!allowed) {
-            emitOtlpSpan('call_denied', { tool, class: 'E-V', reason: 'capability', traceparent });
-            return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
-        }
-    }
-    if (capabilities && capabilities.write && scope.write) {
-        const allowed = capabilities.write.some((s: string) => scope.write!.includes(s));
-        if (!allowed) {
-            emitOtlpSpan('call_denied', { tool, class: 'E-V', reason: 'capability', traceparent });
-            return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
-        }
-    }
-
-    // Quota check 
-    quotas[tool] = (quotas[tool] || 0) + 1;
-    if (quotas[tool] > QUOTA_LIMIT) {
-        emitOtlpSpan('quota_exceeded', { tool, class: 'E-U', traceparent, count: quotas[tool] });
-        return res.status(429).json({ error: 'quota_exceeded', class: 'E-U' });
-    }
-
-    // Validation (Required Fields + Zod)
-    try {
-        const reqs: string[] = (m.input_schema && Array.isArray(m.input_schema.required)) ? m.input_schema.required : [];
-        
-        // ** Required field check ** (This handles the 'missing' error)
-        for (const k of reqs) {
-            if (!args || args[k] === undefined || args[k] === null) { 
-                emitOtlpSpan('validation_error', { tool, class: 'E-V', traceparent, missing: k }); 
-                return res.status(400).json({ error: 'validation_error', class: 'E-V', missing: k }); 
-            }
-        }
-        
-        // Zod validation
-        let schema: ZodTypeAny;
-        if (m.input_schema && m.input_schema.properties) {
-            const properties: ZodRawShape = Object.fromEntries(
-                Object.keys(m.input_schema.properties).map((k) => [k, z.any()])
-            );
-            schema = z.object(properties);
-        } else {
-            schema = z.any();
-        }
-        
-        schema.parse(args);
-
-    } catch (e) {
-        const details = e instanceof Error ? e.message : String(e);
-        emitOtlpSpan('validation_error', { tool, class: 'E-V', traceparent, details });
-        return res.status(400).json({ error: 'validation_error', class: 'E-V', details });
-    }
-
-    // Simulate work completion
-    await new Promise(r => setTimeout(r, 5));
-    emitOtlpSpan('call_ok', { tool, traceparent });
-    logger.info({ msg: 'call_ok', tool, traceparent });
-
-    // Register key if not a dry run
-    if (!dryRun) {
-        processedKeys.add(idempotencyKey);
-    }
-    
-    // Final ACK response
-    const ack = { 
-        status: 'accepted', 
-        effect: dryRun ? 'none' : 'planned', 
-        idempotency_key: idempotencyKey 
-    };
-    
-    return res.json({ ok: true, tool, args, scope, traceparent, ack });
-});
-
-// --- Server Startup ---
-
-export function start() {
-    return app.listen(PORT, () => logger.info({ msg: 'MCP server started', name: 'actuation-mcp', port: PORT }));
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    start();
-}
