@@ -1,36 +1,25 @@
-# MAS-MCP City — Artifacts (v0 scaffold)
+# MAS-MCP City — Artifacts (v0.1 NodeJS)
 
-This repository contains the scaffold for the artifacts promised in Section 10 of the paper.
+This scaffold contains the artifacts for Section 10 with NodeJS MCP servers.
 
-## Quickstart (10 minutes, dev profile)
+## Quickstart (NodeJS servers on ports 8001–8003)
+```bash
+npm install
+npm run dev  # starts all MCP servers (ngsi, sta, actuation)
+```
 
-1. Clone the repo and ensure Python 3.10+ is available.
-2. (Optional) Create a venv.
-3. Install minimal deps:
-   ```bash
-   pip install -r docs/requirements.txt
-   ```
-4. Load fixtures and replay traces:
-   ```bash
-   make load-fixtures
-   make replay-traces
-   ```
-5. Recompute KPIs (Tables 3–4) and regenerate Figure 8 panels:
-   ```bash
-   make eval
-   ```
-
-> Note: This v0 uses stubs for deployment. K8s/Helm charts will arrive in a later tag.
+## Repro steps for evaluation
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r docs/requirements.txt
+make load-fixtures
+make eval
+make verify
+```
 
 ## Layout
-- `agents/` – reference agents (to be added)
-- `mcp-servers/` – MCP NGSI-LD / SensorThings / Actuation stubs
-- `schemas/` – JSON/Avro schemas for envelopes and tools
-- `fixtures/` – NGSI-LD and STA synthetic/anon datasets
-- `traces/golden/` – redacted/time-shifted OTel traces (placeholders)
-- `eval/` – scripts to regenerate KPIs and plots
-- `dashboards/` – Grafana/Jaeger exports
-- `docs/` – DPIA summary, data cards, reproduction guide
-
-## License
-Creative Commons Attribution–NonCommercial 4.0 (CC BY-NC 4.0).
+- `mcp-servers/*` – Node (Express+TS) servers for NGSI-LD, STA, and actuation
+- `fixtures/*` – NGSI-LD / STA synthetic samples
+- `schemas/*` – JSON/Avro (envelopes, tools)
+- `eval/` – scripts to regenerate KPIs/tables
+- `dashboards/` – Grafana/Jaeger placeholders

@@ -1,20 +1,16 @@
 SHELL := /bin/bash
 PY := python3
 
-.PHONY: help deploy-dev load-fixtures replay-traces eval export all verify
+.PHONY: help load-fixtures replay-traces eval export all verify mcp-dev mcp-build
 
 help:
 	@echo "Targets:"
-	@echo "  deploy-dev     - Deploy minimal dev stack (stubs)"
-	@echo "  load-fixtures  - Load NGSI-LD/STA fixtures (synthetic/anon)"
-	@echo "  replay-traces  - Replay golden OTel traces to collector"
-	@echo "  eval           - Recompute KPIs and generate tables/figures"
+	@echo "  load-fixtures  - Load NGSI-LD/STA fixtures (local validation)"
+	@echo "  replay-traces  - Replay golden traces (stub)"
+	@echo "  eval           - Generate KPIs/tables (placeholders)"
 	@echo "  verify         - Consistency checks vs paper tolerances"
-	@echo "  export         - Collect outputs under out/"
-	@echo "  all            - End-to-end: deploy, load, replay, eval, export"
-
-deploy-dev:
-	@echo "[stub] Deploying dev stack (K8s manifests/Helm would go here)"
+	@echo "  mcp-build      - Build all MCP servers (TypeScript)"
+	@echo "  mcp-dev        - Run all MCP servers in dev mode"
 
 load-fixtures:
 	$(PY) scripts/load_fixtures.py --ngsi fixtures/ngsi --sta fixtures/sta
@@ -28,7 +24,13 @@ eval:
 verify:
 	$(PY) scripts/paper_consistency_check.py --out out
 
+mcp-build:
+	npm -ws run build
+
+mcp-dev:
+	npm run dev
+
 export:
 	@echo "Artifacts exported under out/"
 
-all: deploy-dev load-fixtures replay-traces eval export
+all: load-fixtures eval verify

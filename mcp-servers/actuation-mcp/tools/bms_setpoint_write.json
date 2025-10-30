@@ -1,0 +1,26 @@
+{
+  "name": "bms_setpoint_write",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "zone",
+      "setpoint"
+    ],
+    "properties": {
+      "zone": {
+        "type": "string"
+      },
+      "setpoint": {
+        "type": "number"
+      }
+    }
+  },
+  "capabilities": {
+    "write": [
+      "bms"
+    ]
+  },
+  "effects": {
+    "writes": true
+  }
+}

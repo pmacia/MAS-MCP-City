@@ -1,0 +1,28 @@
+{
+  "name": "ngsi_query",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "type"
+    ],
+    "properties": {
+      "type": {
+        "type": "string"
+      },
+      "q": {
+        "type": "string"
+      },
+      "limit": {
+        "type": "number"
+      }
+    }
+  },
+  "capabilities": {
+    "read": [
+      "*"
+    ]
+  },
+  "effects": {
+    "writes": false
+  }
+}

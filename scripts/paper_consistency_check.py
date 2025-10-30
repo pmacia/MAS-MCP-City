@@ -5,7 +5,7 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     manifest = {
-        "version": "v0-scaffold",
+        "version": "v0.1-node",
         "timestamp": time.time(),
         "tables": {
             "table_3": os.path.exists(os.path.join(args.out,"tables","table_3_aggregated_kpis.csv")),

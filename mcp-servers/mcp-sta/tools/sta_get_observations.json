@@ -1,0 +1,25 @@
+{
+  "name": "sta_get_observations",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "datastream_id"
+    ],
+    "properties": {
+      "datastream_id": {
+        "type": "number"
+      },
+      "interval": {
+        "type": "string"
+      }
+    }
+  },
+  "capabilities": {
+    "read": [
+      "Observations"
+    ]
+  },
+  "effects": {
+    "writes": false
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "ngsi_read_entity",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "attrs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "capabilities": {
+    "read": [
+      "AirQualityObserved",
+      "Device",
+      "Building"
+    ]
+  },
+  "effects": {
+    "writes": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "ngsi_subscribe",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "type",
+      "endpoint"
+    ],
+    "properties": {
+      "type": {
+        "type": "string"
+      },
+      "endpoint": {
+        "type": "string"
+      }
+    }
+  },
+  "capabilities": {
+    "read": [
+      "*"
+    ]
+  },
+  "effects": {
+    "writes": false
+  }
+}
