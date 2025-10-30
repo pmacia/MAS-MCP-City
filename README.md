@@ -33,7 +33,7 @@ Start servers (in another terminal) and run the CLI:
 ```bash
 npm install
 npm run dev  # starts MCP servers 8001–8003
-npm gents/cli run dev
+npm -w agents/cli run dev
 # Expected output:
 # NGSI tools: [...]
 # ngsi_query(ok): true
@@ -56,3 +56,8 @@ npm run test
 ## v0.3 updates
 - Traceparent logging + OTLP JSON spans in `traces/golden/`
 - Hardened tests for capabilities, validation, quotas
+
+## v0.4 updates (Phase 3 complete)
+- Tool-specific validation (required fields) with 400 and `missing` errors
+- `actuation-mcp`: ACK idempotent `{status, effect, idempotency_key}` and `dry_run`
+- Tool-specific Vitest tests + write scopes

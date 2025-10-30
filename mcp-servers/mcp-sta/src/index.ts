@@ -8,7 +8,6 @@ import { z, ZodRawShape, ZodTypeAny } from 'zod';
 
 // --- Type Definitions ---
 
-// Define a type for tools/manifests
 interface ToolManifest {
     name: string;
     capabilities?: {
@@ -23,7 +22,6 @@ interface ToolManifest {
     };
 }
 
-// Define a type for OTLP attributes object
 interface OtlpAttributes {
     traceparent?: string;
     server?: string;
@@ -33,9 +31,9 @@ interface OtlpAttributes {
     reason?: string;
     count?: number;
     details?: string;
+    missing?: string;
 }
 
-// Define interface for the POST /call request body
 interface CallBody {
     tool: string;
     args: Record<string, any>;
@@ -52,10 +50,14 @@ app.use(express.json());
 app.use(cors());
 const logger = pino();
 
-// ⭐️ Corrected PORT for mcp-sta
-const PORT = 8002;
+// PORT is 8002 for mcp-sta
+const PORT = 8002; 
 const AUTH_TOKEN = process.env.AUTH_TOKEN || 'dev-token';
 const OTLP_DIR = process.env.OTLP_DIR || path.join(process.cwd(), 'traces', 'golden');
+
+// --- Idempotency Store (In-Memory) ---
+// Stores idempotency keys that have been successfully accepted/processed.
+const processedKeys = new Set<string>();
 
 // --- Handle ESM __dirname compatibility ---
 const __filename = fileURLToPath(import.meta.url);
@@ -70,7 +72,6 @@ if (!fs.existsSync(toolsDir)) {
 
 const toolFiles = fs.readdirSync(toolsDir).filter(f => f.endsWith('.json'));
 
-// Explicitly type toolManifests
 const toolManifests: Record<string, ToolManifest> = Object.fromEntries(
     toolFiles.map(f => {
         const filePath = path.join(toolsDir, f);
@@ -79,13 +80,11 @@ const toolManifests: Record<string, ToolManifest> = Object.fromEntries(
     })
 );
 
-// Explicitly type quotas
 const quotas: Record<string, number> = {};
 const QUOTA_LIMIT = 25; // lowered for tests
 
-// --- Middleware Functions ---
+// --- Middleware and Helpers ---
 
-// 1. Typed auth function (Express Middleware)
 function auth(req: Request, res: Response, next: NextFunction): Response | void {
     const hdr = req.headers['authorization'] || '';
     if (!hdr.startsWith('Bearer ')) return res.status(401).json({ error: 'unauthorized' });
@@ -94,13 +93,11 @@ function auth(req: Request, res: Response, next: NextFunction): Response | void 
     next();
 }
 
-// 2. Typed withTrace (Receives Request, returns string)
 function withTrace(req: Request): string {
     const tp = req.headers['traceparent'] || '00-00000000000000000000000000000000-0000000000000000-00';
     return String(tp);
 }
 
-// 3. Typed emitOtlpSpan (Receives string and Attributes Object)
 function emitOtlpSpan(name: string, attrs: OtlpAttributes): void {
     try {
         fs.mkdirSync(OTLP_DIR, { recursive: true });
@@ -116,16 +113,13 @@ function emitOtlpSpan(name: string, attrs: OtlpAttributes): void {
     }
 }
 
-// --- Route Handlers ---
+// --- Route Handlers (/discover, /schema) ---
 
 app.get('/discover', auth, (req: Request, res: Response) => {
     const traceparent = withTrace(req);
-    // ⭐️ Corrected server name in logger
     logger.info({ msg: 'discover', traceparent, server: 'mcp-sta' });
-    // ⭐️ Corrected server name in span attributes
     emitOtlpSpan('discover', { traceparent, server: 'mcp-sta' });
     res.json({
-        // ⭐️ Corrected server name in response body
         server: 'mcp-sta',
         tools: Object.values(toolManifests).map((m) => ({ name: m.name, capabilities: m.capabilities, effects: m.effects }))
     });
@@ -141,19 +135,34 @@ app.get('/schema/:tool', auth, (req: Request, res: Response) => {
     res.json(m);
 });
 
+// --- Route Handler /call (Updated with Validation and Idempotency Logic) ---
+
 app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Response) => {
     const traceparent = withTrace(req);
-    // Destructure with default values
     const { tool, args = {}, scope = {} } = req.body || {};
     
-    // Tool existence check
     if (!tool) return res.status(400).json({ error: 'tool_missing', class: 'E-P' });
     const m = toolManifests[tool];
     if (!m) return res.status(404).json({ error: 'tool_not_found', class: 'E-P' });
 
-    // Capability check
-    const capabilities = m.capabilities;
+    // 1. Determine Idempotency Key
+    const idempotencyKey = (args && args.idempotency_key) ? String(args.idempotency_key) : String(Date.now());
+    const dryRun = !!(args && args.dry_run);
 
+    // Check if the key has already been processed 
+    if (processedKeys.has(idempotencyKey)) {
+        logger.warn({ msg: 'call_already_processed', tool, traceparent, idempotencyKey });
+        // Return 200 OK with 'already_processed' status 
+        const ack = { 
+            status: 'already_processed', 
+            effect: 'none', 
+            idempotency_key: idempotencyKey 
+        };
+        return res.json({ ok: true, tool, args, scope, traceparent, ack });
+    }
+
+    // Capability check 
+    const capabilities = m.capabilities;
     if (capabilities && capabilities.read && scope.read) {
         const allowed = capabilities.read.some((s: string) => scope.read!.includes(s) || scope.read!.includes('*'));
         if (!allowed) {
@@ -161,7 +170,6 @@ app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Res
             return res.status(403).json({ error: 'capability_denied', class: 'E-V' });
         }
     }
-    
     if (capabilities && capabilities.write && scope.write) {
         const allowed = capabilities.write.some((s: string) => scope.write!.includes(s));
         if (!allowed) {
@@ -170,17 +178,27 @@ app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Res
         }
     }
 
-    // Quota check
+    // Quota check 
     quotas[tool] = (quotas[tool] || 0) + 1;
     if (quotas[tool] > QUOTA_LIMIT) {
         emitOtlpSpan('quota_exceeded', { tool, class: 'E-U', traceparent, count: quotas[tool] });
         return res.status(429).json({ error: 'quota_exceeded', class: 'E-U' });
     }
 
-    // Validation
+    // Validation (Required Fields + Zod)
     try {
+        const reqs: string[] = (m.input_schema && Array.isArray(m.input_schema.required)) ? m.input_schema.required : [];
+        
+        // ** Required field check ** (This handles the 'missing' error)
+        for (const k of reqs) {
+            if (!args || args[k] === undefined || args[k] === null) { 
+                emitOtlpSpan('validation_error', { tool, class: 'E-V', traceparent, missing: k }); 
+                return res.status(400).json({ error: 'validation_error', class: 'E-V', missing: k }); 
+            }
+        }
+        
+        // Zod validation
         let schema: ZodTypeAny;
-
         if (m.input_schema && m.input_schema.properties) {
             const properties: ZodRawShape = Object.fromEntries(
                 Object.keys(m.input_schema.properties).map((k) => [k, z.any()])
@@ -189,29 +207,42 @@ app.post('/call', auth, async (req: Request<{}, {}, Partial<CallBody>>, res: Res
         } else {
             schema = z.any();
         }
-
+        
         schema.parse(args);
+
     } catch (e) {
         const details = e instanceof Error ? e.message : String(e);
         emitOtlpSpan('validation_error', { tool, class: 'E-V', traceparent, details });
         return res.status(400).json({ error: 'validation_error', class: 'E-V', details });
     }
 
+    // Simulate work completion
     await new Promise(r => setTimeout(r, 5));
     emitOtlpSpan('call_ok', { tool, traceparent });
     logger.info({ msg: 'call_ok', tool, traceparent });
-    return res.json({ ok: true, tool, args, scope, traceparent });
+
+    // Register key if not a dry run
+    if (!dryRun) {
+        processedKeys.add(idempotencyKey);
+    }
+    
+    // Final ACK response
+    const ack = { 
+        status: 'accepted', 
+        effect: dryRun ? 'none' : 'planned', 
+        idempotency_key: idempotencyKey 
+    };
+    
+    // NOTE: STA servers typically return data, but for this generic mock, we return ack for consistency
+    return res.json({ ok: true, tool, args, scope, traceparent, ack });
 });
 
 // --- Server Startup ---
 
-// Export start() so it can be called in tests
 export function start() {
-    // ⭐️ Corrected name and port in startup message
     return app.listen(PORT, () => logger.info({ msg: 'MCP server started', name: 'mcp-sta', port: PORT }));
 }
 
-// Start the server only if the file is executed directly
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     start();
 }

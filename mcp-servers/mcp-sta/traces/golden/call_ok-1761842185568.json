@@ -1,0 +1,8 @@
+{
+  "name": "call_ok",
+  "time": 1761842185568,
+  "attributes": {
+    "tool": "sta_get_observations",
+    "traceparent": "00-00000000000000000000000000000000-0000000000000000-00"
+  }
+}

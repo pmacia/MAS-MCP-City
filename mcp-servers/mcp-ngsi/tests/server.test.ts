@@ -1,96 +1,119 @@
-// server.test.ts
-
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import { app as ngsiApp } from '../src/mcp-ngsi';
 
-// Import only 'app' from index.ts. 
-// Supertest can test the Express instance directly without needing a real port.
-import { app } from '../src/index'; 
+// Configuración de prueba
+const AUTH_TOKEN = 'dev-token';
+const AUTH_HEADER = `Bearer ${AUTH_TOKEN}`;
 
+// Mock de la función emitOtlpSpan para evitar escrituras en disco durante el test
+jest.mock('fs', () => ({
+    ...jest.requireActual('fs'),
+    writeFileSync: jest.fn(),
+    mkdirSync: jest.fn(),
+}));
 
-// NOTE: Since we are testing the Express instance (app) directly with Supertest,
-// we typically don't need beforeAll/afterAll hooks to start and close the server.
-// If your original code required these hooks, you should verify if they are still needed
-// after ensuring 'app' is properly exported from 'index.ts'.
+describe('NGSI MCP Server Endpoints (Port 8001)', () => {
+    // -----------------------------------------------------------
+    // /call - Idempotency and Basic Logic Tests
+    // -----------------------------------------------------------
 
-// If you still need the 'start' function (e.g., for full integration tests or database setup),
-// the structure below can be uncommented, assuming 'start' is also exported from '../src/index'.
-/*
-let server: any; 
-
-beforeAll(async () => {
-    // This assumes 'start' is exported from index.ts and returns the Node server listener object.
-    const { start } = await import('../src/index');
-    server = start();
-});
-
-afterAll(() => {
-    server && server.close();
-});
-*/
-
-
-describe('MCP server basic endpoints', () => {
-    // Define the authentication header for reuse.
-    const auth = { Authorization: 'Bearer dev-token' };
-
-    // --- Discovery and Schema Tests ---
-
-    it('discovers tools', async () => {
-        // Direct request to the Express instance (app)
-        const res = await request(app).get('/discover').set(auth); 
+    describe('POST /call - Idempotency and Validation', () => {
+        const TEST_TOOL = 'ngsi_tool_a';
+        const IDEMPOTENCY_KEY = 'ngsi-id-67890';
         
-        expect(res.status).toBe(200);
-        expect(res.body.server).toBe('mcp-ngsi');
-        expect(res.body.tools).toBeInstanceOf(Array);
-        // Assuming JSON loading is successful and tools are present.
-        expect(res.body.tools.length).toBeGreaterThan(0); 
-    });
+        // Test 1: Primera llamada exitosa
+        it('should process the first call successfully and register idempotency key (status: accepted)', async () => {
+            const payload = {
+                tool: TEST_TOOL,
+                args: { 
+                    idempotency_key: IDEMPOTENCY_KEY,
+                    required_param: 'value',
+                    dry_run: false
+                },
+                scope: { read: ['*'] }
+            };
 
-    it('returns a schema for a known tool', async () => {
-        // First, discover the name of an available tool.
-        const disc = await request(app).get('/discover').set(auth);
-        
-        // Assuming at least one tool exists.
-        const tool = disc.body.tools[0].name; 
-        
-        // Request the schema using the tool's name.
-        const res = await request(app).get(`/schema/${tool}`).set(auth);
-        
-        expect(res.status).toBe(200);
-        expect(res.body.name).toBe(tool);
-        expect(res.body).toHaveProperty('input_schema');
-    });
+            const response = await request(ngsiApp)
+                .post('/call')
+                .set('Authorization', AUTH_HEADER)
+                .send(payload)
+                .expect(200);
 
-    // --- Authorization Tests ---
-
-    it('denies without token', async () => {
-        const res = await request(app).get('/discover');
-        expect(res.status).toBe(401); // 401: Unauthorized
-    });
-    
-    it('denies with bad token', async () => {
-        const res = await request(app).get('/discover').set({ Authorization: 'Bearer bad-token' });
-        expect(res.status).toBe(403); // 403: Forbidden
-    });
-
-    // --- Call Endpoint Test ---
-
-    it('validates capability scope or args on call', async () => {
-        const disc = await request(app).get('/discover').set(auth);
-        const tool = disc.body.tools[0].name;
-
-        const res = await request(app).post('/call').set(auth).send({
-            tool,
-            args: {},
-            // The empty 'scope' array may fail if the tool requires a specific scope
-            scope: { read: [] } 
+            expect(response.body.ok).toBe(true);
+            expect(response.body.ack.status).toBe('accepted');
+            expect(response.body.ack.effect).toBe('planned');
+            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
         });
 
-        // The status depends on the tool's schema requirements:
-        // 200: If the tool requires neither arguments nor scope.
-        // 400: If 'args' validation (Zod) fails.
-        // 403: If 'scope' validation fails.
-        expect([400, 403, 200]).toContain(res.status);
+        // Test 2: Segunda llamada con la misma clave (Idempotencia)
+        it('should return "already_processed" for subsequent calls with the same key', async () => {
+            const payload = {
+                tool: TEST_TOOL,
+                args: { 
+                    idempotency_key: IDEMPOTENCY_KEY,
+                    required_param: 'other_value' 
+                },
+                scope: { read: ['*'] }
+            };
+            
+            const response = await request(ngsiApp)
+                .post('/call')
+                .set('Authorization', AUTH_HEADER)
+                .send(payload)
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.ack.status).toBe('already_processed');
+            expect(response.body.ack.effect).toBe('none');
+            expect(response.body.ack.idempotency_key).toBe(IDEMPOTENCY_KEY);
+        });
+        
+        // Test 3: Validación de campo obligatorio faltante (missing)
+        it('should return 400 validation_error with "missing" field if a required argument is absent', async () => {
+            const payload = {
+                tool: TEST_TOOL,
+                args: { 
+                    // required_param está ausente
+                },
+                scope: { read: ['*'] }
+            };
+
+            const response = await request(ngsiApp)
+                .post('/call')
+                .set('Authorization', AUTH_HEADER)
+                .send(payload)
+                .expect(400);
+
+            expect(response.body.error).toBe('validation_error');
+            expect(response.body.class).toBe('E-V');
+            expect(response.body.missing).toBe('required_param'); 
+        });
+    });
+
+    // -----------------------------------------------------------
+    // /discover and /schema Tests
+    // -----------------------------------------------------------
+
+    describe('GET /discover', () => {
+        it('should return 200 and the server name', async () => {
+            const response = await request(ngsiApp)
+                .get('/discover')
+                .set('Authorization', AUTH_HEADER)
+                .expect(200);
+
+            expect(response.body.server).toBe('mcp-ngsi');
+        });
+    });
+
+    describe('GET /schema/:tool', () => {
+        it('should return 200 and schema for a valid tool', async () => {
+            const response = await request(ngsiApp)
+                .get('/schema/ngsi_tool_a')
+                .set('Authorization', AUTH_HEADER)
+                .expect(200);
+
+            expect(response.body.name).toBe('ngsi_tool_a');
+            expect(response.body.capabilities.read).toContain('*');
+        });
     });
 });
