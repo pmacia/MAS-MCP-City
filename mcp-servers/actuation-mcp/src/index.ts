@@ -79,4 +79,16 @@ app.post('/call', auth, async (req, res) => {
   return res.json({ ok: true, tool, args, scope, traceparent });
 });
 
-app.listen(PORT, () => logger.info({ msg: 'MCP server started', name: 'actuation-mcp', port: PORT }));
+// to alow testing, export a start function
+function start() {
+  // Si la inicialización síncrona de archivos falla, el código ya está roto aquí.
+  return app.listen(PORT, () => logger.info({ /* ... */ }));
+}
+
+export { app, start }; // export the app and start function for testing
+
+// Call start() only if this file is executed as the main program.
+// Note: 'process.env.VITEST' is a variable set by Vitest to prevent automatic startup during tests.
+if (process.argv[1] === fileURLToPath(import.meta.url) && !process.env.VITEST) {
+    start();
+}

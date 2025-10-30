@@ -5,11 +5,13 @@
   "workspaces": [
     "mcp-servers/mcp-ngsi",
     "mcp-servers/mcp-sta",
-    "mcp-servers/actuation-mcp"
+    "mcp-servers/actuation-mcp",
+    "agents/cli"
   ],
   "scripts": {
     "build": "npm -ws run build",
     "start": "npm -ws run start",
+    "test": "npm -ws run test",
     "dev": "npm -w mcp-servers/mcp-ngsi run dev & npm -w mcp-servers/mcp-sta run dev & npm -w mcp-servers/actuation-mcp run dev & wait"
   }
 }

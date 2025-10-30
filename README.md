@@ -17,6 +17,32 @@ make eval
 make verify
 ```
 
+## Run (test)
+```bash
+unzip MAS-MCP-City-v0.2.zip
+cd MAS-MCP-City-v0.2
+npm install
+npm -ws run build
+
+npm run dev
+```
+
+## Test the end-to-end CLI (in another terminal)
+```bash
+npm -w agents/cli run dev
+# Expected output:
+# NGSI tools: [...]
+# ngsi_query(ok): true
+# sta_get_observations(ok): true
+# Happy path completed.
+```
+
+## Run de automated test (Vitest)
+```bash
+npm -ws run test
+```
+
+
 ## Layout
 - `mcp-servers/*` – Node (Express+TS) servers for NGSI-LD, STA, and actuation
 - `fixtures/*` – NGSI-LD / STA synthetic samples
