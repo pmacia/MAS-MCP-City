@@ -75,4 +75,4 @@ These workflows correspond to the reproducibility guarantees described in §10 (
 
 ## 7. Citation
 F. Maciá-Pérez, I. Lorenzo-Fonseca, À. Maciá-Fiteni, *MAS-MCP City - Reproducible LLM-agent coordination with MCP over NGSI-LD/SensorThings for traceable SmartCampus IAQ and occupancy analytics*, *Future Generation Computer Systems*, 2025.  
-DOI: [10.5281/zenodo.TODO](https://doi.org/10.5281/zenodo.TODO)
+DOI: [10.5281/zenodo.17500006](https://doi.org/10.5281/zenodo.17500006)

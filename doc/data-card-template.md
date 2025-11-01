@@ -7,7 +7,7 @@
 **Repository:** [https://github.com/pmacia/MAS-MCP-City](https://github.com/pmacia/MAS-MCP-City)  
 **Related Publication:**  
 F. Maciá-Pérez, I. Lorenzo-Fonseca, À. Maciá-Fiteni, *MAS-MCP City - Reproducible LLM-agent coordination with MCP over NGSI-LD/SensorThings…*, *Future Generation Computer Systems*, 2025.  
-DOI: [10.5281/zenodo.TODO](https://doi.org/10.5281/zenodo.TODO)
+DOI: [10.5281/zenodo.17500006](https://doi.org/10.5281/zenodo.17500006)
 
 ---
 
@@ -119,7 +119,7 @@ Example wording for CO₂:
 If reusing this dataset, please cite both the paper and the Zenodo DOI:
 
 > F. Maciá-Pérez et al., *MAS-MCP City - Reproducible LLM-agent coordination with MCP over NGSI-LD/SensorThings for traceable SmartCampus IAQ and occupancy analytics*, *Future Generation Computer Systems*, 2025.
-> DOI: [10.5281/zenodo.TODO](https://doi.org/10.5281/zenodo.TODO)
+> DOI: [10.5281/zenodo.17500006](https://doi.org/10.5281/zenodo.17500006)
 
 ---
 

@@ -7,7 +7,7 @@
 **Repository:** [https://github.com/pmacia/MAS-MCP-City](https://github.com/pmacia/MAS-MCP-City)  
 **Related Publication:**  
 F. Maciá-Pérez, I. Lorenzo-Fonseca, À. Maciá-Fiteni, *MAS-MCP City…*, *FGCS*, 2025.  
-DOI: [10.5281/zenodo.TODO](https://doi.org/10.5281/zenodo.TODO)
+DOI: [10.5281/zenodo.17500006](https://doi.org/10.5281/zenodo.17500006)
 
 ---
 
@@ -96,4 +96,4 @@ Use alongside CO₂ and booking fixtures to reproduce occupancy analytics (Secti
 ## 9️⃣ Citation
 
 > F. Maciá-Pérez et al., *MAS-MCP City*, *Future Generation Computer Systems*, 2025.
-> DOI: [10.5281/zenodo.TODO](https://doi.org/10.5281/zenodo.TODO)
+> DOI: [10.5281/zenodo.17500006](https://doi.org/10.5281/zenodo.17500006)
