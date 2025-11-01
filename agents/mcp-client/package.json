@@ -1,0 +1,23 @@
+{
+  "name": "agents-mcp-client",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "dev": "node --loader ts-node/esm src/demo.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "ws": "^8.18.0",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.11.30",
+    "@types/ws": "^8.5.10",
+    "vitest": "^2.1.4"
+  }
+}
